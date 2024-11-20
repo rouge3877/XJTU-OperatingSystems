@@ -137,5 +137,9 @@ void P(sem_t *sem);
 void V(sem_t *sem);
 
 
+/* API for XJTU-OSLab Part2(Pipe)*/
+int Pipe(int pipefd[2]);
+
+
 #endif /* __API_H__ */
 /* $end API.h */

@@ -607,5 +607,16 @@ void V(sem_t *sem)
 }
 
 
+/****************************************************
+ * Wrappers for XJTU-OSLab Part2(Pipe)
+ ****************************************************/
+int Pipe(int pipefd[2]) {
+    int rc = pipe(pipefd);
+    if (rc < 0)
+        unix_error("Pipe error");
+    return rc;
+}
+
+
 /* $end API.c */
 
