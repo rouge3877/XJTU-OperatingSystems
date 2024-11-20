@@ -1,67 +1,108 @@
-#include <API.h>
+#include "API.h"
 
-int flag = 0; // 用于标识信号是否已触发
+#define INTER -1
+#define WAITING 4
 
-// 信号处理函数
-void signal_handler(int sig) {
-    if (sig == SIGINT || sig == SIGQUIT) {
-        flag = sig; // 捕获信号类型
-    }
+volatile atomic_int flag = 0;
+sigset_t global_mask;
+
+void inter_handler()
+{
+    sigset_t prev_mask;
+
+    Sigprocmask(SIG_BLOCK, &global_mask, &prev_mask); /* Block sigs */
+    flag = INTER;
+#ifdef DEBUG
+    write(STDOUT_FILENO, "Handler received signal!!\n", 27);
+#endif
+    Sigprocmask(SIG_SETMASK, &prev_mask, NULL); /* Restore sigs */
+
+    return;
 }
-
-// 子进程等待信号的函数
-void waiting() {
-    while (flag == 0) {
-        sleep(1); // 通过循环检查flag，阻塞子进程
-    }
+void waiting()
+{
+    flag += WAITING;
+    return;
 }
+int main()
+{
+    Sigfillset(&global_mask);
+    Sigdelset(&global_mask, SIGUSR1);
+    Sigdelset(&global_mask, SIGUSR2);
+    Sigprocmask(SIG_SETMASK, &global_mask, NULL);
+    Signal(SIGUSR1, waiting);
+    Signal(SIGUSR2, waiting);
 
-int main() {
     pid_t pid1 = -1, pid2 = -1;
+    while (pid1 == -1)
+        pid1 = Fork();
+    if (pid1 > 0)
+    {
+        while (pid2 == -1)
+            pid2 = Fork();
+        if (pid2 > 0)
+        {
+            sigset_t mask;
+            while (flag != 2 * WAITING)
+                Sigsuspend(&mask);
 
-    // 捕获信号 SIGINT 和 SIGQUIT
-    signal(SIGINT, signal_handler);
-    signal(SIGQUIT, signal_handler);
+            Sigfillset(&mask);
+            Sigdelset(&mask, SIGALRM);
+            Sigdelset(&mask, SIGQUIT);
+            Sigdelset(&mask, SIGINT);
+            Sigprocmask(SIG_SETMASK, &mask, NULL);
+            // Now mask is set only receive SIGALRM, SIGQUIT, SIGINT
 
-    while (pid1 == -1) pid1 = fork(); // 创建第一个子进程
+            (void)Alarm(5);
+            Signal(SIGALRM, inter_handler);
+            Signal(SIGQUIT, inter_handler);
+            Signal(SIGINT, inter_handler);
 
-    if (pid1 > 0) { // 父进程
-        while (pid2 == -1) pid2 = fork(); // 创建第二个子进程
+#ifdef DEBUG
+            printf("Parent process set mask and handler!!\n");
+#endif
+            while (flag != INTER)
+                Sigsuspend(&mask);
 
-        if (pid2 > 0) { // 父进程继续执行
-            printf("Parent process is waiting for a signal...\n");
-            for (int i = 0; i < 5 && flag == 0; ++i) {
-                sleep(1); // 等待5秒钟，期间监听信号
-                if(flag == 4){
-                    Kill(pid1, SIGALRM);
-                    Kill(pid2, SIGALRM);
-                    break;
-                }
-            }
+#ifdef DEBUG
+            printf("Parent process received signal!!\n");
+#endif
 
-            if (flag == SIGINT || flag == SIGQUIT) {
-                // 向两个子进程发送信号
-                printf("Parent received signal: %s\n", flag == SIGINT ? "SIGINT" : "SIGQUIT");
-                kill(pid1, SIGUSR1); // 通知子进程 1
-                waitpid(pid1, NULL, 0); // 等待子进程 1 结束
+            Kill(pid1, SIGSTKFLT);
+            Waitpid(pid1, NULL, 0);
+            Kill(pid2, SIGCHLD);
+            Waitpid(pid2, NULL, 0);
 
-                kill(pid2, SIGUSR2); // 通知子进程 2
-                waitpid(pid2, NULL, 0); // 等待子进程 2 结束
-            }
+            printf("\nParent process is killed!!\n");
+        }
+        else
+        {
+            Signal(SIGCHLD, waiting);
+            sigset_t mask;
+            Sigfillset(&mask);
+            Sigdelset(&mask, SIGCHLD);
+            Sigprocmask(SIG_SETMASK, &mask, NULL);
+            // Now mask is set only receive SIGSTKFLT
+            Kill(getppid(), SIGUSR2); // Send signal to parent
 
-            printf("Parent process is killed!!\n");
-        } else { // 子进程2
-            signal(SIGUSR2, signal_handler); // 捕获来自父进程的信号
-            waiting();
-            printf("Child process 2 is killed by parent!!\n");
+            Pause();
+            printf("\nChild process2 is killed by parent!!\n");
             return 0;
         }
-    } else { // 子进程1
-        signal(SIGUSR1, signal_handler); // 捕获来自父进程的信号
-        waiting();
-        printf("Child process 1 is killed by parent!!\n");
+    }
+    else
+    {
+        Signal(SIGSTKFLT, waiting);
+        sigset_t mask;
+        Sigfillset(&mask);
+        Sigdelset(&mask, SIGSTKFLT);
+        Sigprocmask(SIG_SETMASK, &mask, NULL);
+        // Now mask is set only receive SIGSTKFLT
+        Kill(getppid(), SIGUSR1); // Send signal to parent
+
+        Pause();
+        printf("\nChild process1 is killed by parent!!\n");
         return 0;
     }
-
     return 0;
 }
