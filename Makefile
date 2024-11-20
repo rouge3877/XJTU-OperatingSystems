@@ -8,7 +8,7 @@ SRC_ROOT = API.c
 OBJS_ROOT = $(BUILD_DIR)/$(SRC_ROOT:.c=.o)
 
 # Subdirectories
-SUBDIRS = Mem-Allocate Page-Swapping Pipe Software‐Interrupt
+SUBDIRS = MemAllocate PageSw$(uname -r)vim apping Pipe SoftInterrupt
 BUILD_DIR = build
 
 # Find all .c files in subdirectories
