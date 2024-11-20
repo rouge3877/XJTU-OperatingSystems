@@ -8,7 +8,7 @@ SRC_ROOT = API.c
 OBJS_ROOT = $(BUILD_DIR)/$(SRC_ROOT:.c=.o)
 
 # Subdirectories
-SUBDIRS = MemAllocate PageSw$(uname -r)vim apping Pipe SoftInterrupt
+SUBDIRS = MemAllocate PageSwapping Pipe SoftInterrupt
 BUILD_DIR = build
 
 # Find all .c files in subdirectories
@@ -46,6 +46,21 @@ $(BUILD_DIR)/%: $(BUILD_DIR)/%.o $(OBJS_ROOT) | $(BUILD_DIR)
 debug: CFLAGS += $(DEBUG_FLAGS)
 debug: all
 
+page:
+	@./$(BUILD_DIR)/PageSwapping/sim-page
+
+pipe:
+	@./$(BUILD_DIR)/Pipe/Pipe4IPC
+
+ulkpipe:
+	@./$(BUILD_DIR)/Pipe/ulk_Pipe4IPC
+
+signal:
+	@./$(BUILD_DIR)/SoftInterrupt/kill
+
+malloc:
+	@./$(BUILD_DIR)/MemAllocate/Memalloc
+
 # Clean up all build files
 clean:
 	rm -rf $(BUILD_DIR)
@@ -55,10 +70,3 @@ list:
 	@echo "Generated executables:"
 	@echo $(EXECUTABLES)
 
-# Help target
-help:
-	@echo "Available targets:"
-	@echo "  make all       - Build all executables in the '$(BUILD_DIR)' directory"
-	@echo "  make debug     - Build all executables with debug flags"
-	@echo "  make clean     - Clean all generated files"
-	@echo "  make list      - List all target executables"
