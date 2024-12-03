@@ -30,10 +30,18 @@ mov ecx, 2
 mov bl, 4
 call read_disk
 
-; check loader signature: cmp word[0x1000], 0x55aa
-cmp word [0x1000], 0x55aa
+; check loader signature: rouge -> ascii -> 52 4f 55 47 45
+cmp byte [0x1000], 0x52
 jne error
-jmp 0x1002
+cmp byte [0x1001], 0x4f
+jne error
+cmp byte [0x1002], 0x55
+jne error
+cmp byte [0x1003], 0x47
+jne error
+cmp byte [0x1004], 0x45
+jne error
+jmp 0x1005
 
 
 ; mov edi, 0x1000
