@@ -1,82 +1,76 @@
 [org 0x1000]
 
-; check loader signature: rouge -> ascii -> 52 4f 55 47 45
+; Check loader signature: "ROUGE" -> ASCII: 52 4F 55 47 45
 db "ROUGE"
 
+; Print booting message
 mov si, booting
 call print
 
+; Detect memory regions using SMAP (System Management BIOS)
 detect_memory:
-    xor ebx, ebx
-    mov ax, 0
-    mov es, ax
-    mov edi, ards_buffer; es:edi = 0x0000:buffer
-    mov edx, 0x534d4150; "SMAP"
+    xor ebx, ebx                   ; Clear EBX register
+    mov ax, 0                      ; Reset AX
+    mov es, ax                     ; Set ES to 0
+    mov edi, ards_buffer           ; ES:EDI points to ards_buffer
+    mov edx, 0x534D4150             ; "SMAP" signature in EDX
 
-    .next:
-        mov eax, 0xe820
-        mov ecx, 20
-        int 0x15
+.next:
+    mov eax, 0xE820                ; BIOS call for memory map
+    mov ecx, 20                    ; Size of each entry in bytes
+    int 0x15                       ; BIOS interrupt 0x15
 
-        jc error; CF = 1, error
-        add di, cx
-        inc word [ards_count]
+    jc error                        ; Jump to error if CF is set (carry flag)
+    add di, cx                      ; Move to next memory region in buffer
+    inc word [ards_count]           ; Increment memory region count
 
-        cmp ebx, 0
-        jnz .next
+    cmp ebx, 0                      ; Check if we've processed all regions
+    jnz .next                       ; Continue if not
 
-    mov si, memory_detect_msg
-    call print
+; Print memory detection success message
+mov si, memory_detect_msg
+call print
 
-;     mov cx, [ards_count]
-;     mov si, 0
-; .show
-;     mov eax, [ards_buffer + si]
-;     mov ebx, [ards_buffer + si + 8]
-;     mov edx, [ards_buffer + si + 16]
-;     add si, 20
-
-;     loop .show
-
-; in protected mode, bios interrupts are disabled
+; Prepare for protected mode (disable interrupts and set up A20 gate)
 prepare_protected_mode:
-    cli
-
-    in al, 0x92 ; open A20
+    cli                             ; Disable interrupts
+    in al, 0x92                     ; Enable A20 gate
     or al, 2
     out 0x92, al
 
-    lgdt [gdt_pointer]
+    lgdt [gdt_pointer]              ; Load GDT (Global Descriptor Table)
 
     mov eax, cr0
-    or eax, 1
-    mov cr0, eax
+    or eax, 1                       ; Set PG (Protection Enable) bit in CR0
+    mov cr0, eax                    ; Write back to CR0
 
-    ; use jmp to flush the instruction cache
+    ; Use far jump to flush the instruction cache
     jmp dword code_selector:protected_mode
 
-
+; Print function (uses BIOS interrupt 0x10)
 print:
-    mov ah, 0x0e
-    .loop:
-        mov al, [si]
-        cmp al, 0
-        je .done
-        int 0x10
-        inc si
-        jmp .loop
-    .done:
+    mov ah, 0x0e                    ; Teletype output function (BIOS)
+.loop:
+    mov al, [si]                    ; Load character from string
+    cmp al, 0                       ; Check if end of string
+    je .done
+    int 0x10                        ; Print character
+    inc si                           ; Move to next character
+    jmp .loop
+.done:
     ret
 
+; Error handling (print error message and halt)
 error:
     mov si, error_msg
     call print
-    hlt
+    hlt                             ; Halt the system
     jmp $
 
-
+; Switch to protected mode (32-bit)
 [bits 32]
 protected_mode:
+    ; Initialize segment registers to the data selector
     mov ax, data_selector
     mov ds, ax
     mov es, ax
@@ -84,131 +78,128 @@ protected_mode:
     mov gs, ax
     mov ss, ax
 
-    mov esp, 0x10000
+    ; Set up a good place to load the kernel at 0x10000
+    mov esp, 0x10000                ; Set stack pointer
 
-    ; mov byte [0xb8000], 'A'
-    ; mov byte [0x200000], 'B'
+    ; Start loading the kernel into memory
+    mov edi, 0x10000                ; Set destination address for disk read
+    mov ecx, 5                      ; Number of sectors to read
+    mov bl, 200                     ; Number of sectors to read at once
 
-    mov edi, 0x10000
-    mov ecx, 5
-    mov bl, 200
-
-    call read_disk
-    jmp dword code_selector:0x10000
+    call read_disk                  ; Call disk reading function
+    jmp dword code_selector:0x10000  ; Jump to kernel's entry point
 
 jmp $
 
-
+; Read disk function (using BIOS INT 13h)
 read_disk:
-    ; 设置读写扇区的数量
-    mov dx, 0x1f2
-    mov al, bl
+    ; Set the number of sectors to read (AH = 0x20 = read sectors)
+    mov dx, 0x1f2                   ; I/O port 0x1f2 - sector count
+    mov al, bl                      ; Set number of sectors to read
     out dx, al
 
-    inc dx; 0x1f3
-    mov al, cl; 起始扇区的前八位
+    inc dx                          ; I/O port 0x1f3 - start sector (low byte)
+    mov al, cl                      ; Start sector (low byte)
     out dx, al
 
-    inc dx; 0x1f4
+    inc dx                          ; I/O port 0x1f4 - start sector (mid byte)
     shr ecx, 8
-    mov al, cl; 起始扇区的中八位
+    mov al, cl
     out dx, al
 
-    inc dx; 0x1f5
+    inc dx                          ; I/O port 0x1f5 - start sector (high byte)
     shr ecx, 8
-    mov al, cl; 起始扇区的高八位
+    mov al, cl
     out dx, al
 
-    inc dx; 0x1f6
+    inc dx                          ; I/O port 0x1f6 - LBA mode setup
     shr ecx, 8
-    and cl, 0b1111; 将高四位置为 0
-
-    mov al, 0b1110_0000;
+    and cl, 0b1111                  ; Clear the high 4 bits
+    mov al, 0b1110_0000
     or al, cl
-    out dx, al; 主盘 - LBA 模式
-
-    inc dx; 0x1f7
-    mov al, 0x20; 读硬盘
     out dx, al
 
-    xor ecx, ecx; 将 ecx 清空
-    mov cl, bl; 得到读写扇区的数量
+    inc dx                          ; I/O port 0x1f7 - command register
+    mov al, 0x20                    ; Disk read command
+    out dx, al
 
-    .read:
-        push cx; 保存 cx
-        call .waits; 等待数据准备完毕
-        call .reads; 读取一个扇区
-        pop cx; 恢复 cx
-        loop .read
+    xor ecx, ecx                    ; Clear ECX
+    mov cl, bl                      ; Set sector count
+
+.read:
+    push cx                          ; Save CX register
+    call .waits                      ; Wait for disk ready
+    call .reads                      ; Read one sector
+    pop cx                           ; Restore CX register
+    loop .read                       ; Loop for all sectors
     ret
 
-    .waits:
-        mov dx, 0x1f7
-        .check:
-            in al, dx
-            jmp $+2; nop 直接跳转到下一行
-            jmp $+2; 一点点延迟
-            jmp $+2
-            and al, 0b1000_1000
-            cmp al, 0b0000_1000
-            jnz .check
-        ret
+.waits:
+    mov dx, 0x1f7                   ; I/O port 0x1f7 - status register
+.check:
+    in al, dx                       ; Read status register
+    and al, 0b1000_1000             ; Check bits 7 and 3
+    cmp al, 0b0000_1000             ; Check if data ready (bit 3)
+    jnz .check                      ; Wait until ready
+    ret
 
-    .reads:
-        mov dx, 0x1f0
-        mov cx, 256; 一个扇区 256 字
-        .readw:
-            in ax, dx
-            jmp $+2; 一点点延迟
-            jmp $+2
-            jmp $+2
-            mov [edi], ax
-            add edi, 2
-            loop .readw
-        ret
+.reads:
+    mov dx, 0x1f0                   ; I/O port 0x1f0 - data register
+    mov cx, 256                     ; One sector = 256 words (512 bytes)
+.readw:
+    in ax, dx                       ; Read a word from the disk
+    mov [edi], ax                   ; Store in memory
+    add edi, 2                      ; Move to next memory location
+    loop .readw                     ; Loop until entire sector is read
+    ret
 
-
+; Global Descriptor Table (GDT) for protected mode
 code_selector equ (1<<3)
 data_selector equ (2<<3)
 
-memory_base equ 0 ; memory base address
-memory_limit equ ((1 << 32) / 4096 - 1) ; memory limit address
+; Memory base and limit
+memory_base equ 0                 ; Memory base address
+memory_limit equ ((1 << 32) / 4096 - 1) ; Memory limit address
 
+; GDT pointer and descriptor entries
 gdt_pointer:
     dw gdt_end - gdt_start - 1
     dd gdt_start
 
 gdt_start:
-    dd 0, 0; null descriptor
+    dd 0, 0                        ; Null descriptor
+
 gdt_code:
-    dw memory_limit & 0xffff; limit 0:15
-    dw memory_base & 0xffff; base 0:15
-    db (memory_base >> 16) & 0xff; base 16:23
+    dw memory_limit & 0xffff        ; Limit (0:15)
+    dw memory_base & 0xffff         ; Base (0:15)
+    db (memory_base >> 16) & 0xff   ; Base (16:23)
+    db 0b_1_00_1_1_0_1_0           ; Access byte
+    db 0b1_1_0_0_0000 | ((memory_limit >> 16) & 0xf) ; Granularity & limit (16:19)
+    db (memory_base >> 24) & 0xff   ; Base (24:31)
 
-    db 0b_1_00_1_1_0_1_0
-    db 0b1_1_0_0_0000 | ((memory_limit >> 16) & 0xf)
-    db (memory_base >> 24) & 0xff; base 24:31
 gdt_data:
-    dw memory_limit & 0xffff; limit 0:15
-    dw memory_base & 0xffff; base 0:15
-    db (memory_base >> 16) & 0xff; base 16:23
+    dw memory_limit & 0xffff        ; Limit (0:15)
+    dw memory_base & 0xffff         ; Base (0:15)
+    db (memory_base >> 16) & 0xff   ; Base (16:23)
+    db 0b_1_00_1_0_0_1_0           ; Access byte
+    db 0b1_1_0_0_0000 | ((memory_limit >> 16) & 0xf) ; Granularity & limit (16:19)
+    db (memory_base >> 24) & 0xff   ; Base (24:31)
 
-    db 0b_1_00_1_0_0_1_0
-    db 0b1_1_0_0_0000 | ((memory_limit >> 16) & 0xf)
-    db (memory_base >> 24) & 0xff; base 24:31
 gdt_end:
 
+; Boot message (will be printed during boot process)
 booting:
-    ; 10 is the line feed, 13 is the carriage return
     db "Loading RougeOS ......... XD", 10, 13, 0
-    
+
+; Error message (printed if loading fails)
 error_msg:
     db "Loading error! :(", 10, 13, 0
 
+; Memory detection success message
 memory_detect_msg:
     db "Memory Detecting Success! :)", 10, 13, 0
 
-;ards buffer's size is veriable, put it at the end of the file to avoid overflows
+; ARDS buffer and count (used for memory map detection)
 ards_count:
     dw 0
 ards_buffer:

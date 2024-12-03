@@ -1,232 +1,222 @@
-[org 0x7c00]
+[org 0x7c00]  ; The BIOS loads the boot sector into memory at 0x7c00
 ; In the boot sector, the BIOS loads the boot sector into memory at 0x7c00
 ; So why do we need to set the origin to 0x7c00?
 ;    - For Compiler to know where to put the code (calculate the offset in right way)
 
 
-; set screen mode: clear screen and set 80x25 text mode
-; refer to IBM PS 2 and PC BIOS Interface Technical Reference
+; Set video mode: 80x25 text mode (clear screen)
 mov ax, 3
 int 0x10
 
-; initialize segment registers
+; Initialize segment registers (set them to 0)
 mov ax, 0x0000
 mov ds, ax
 mov es, ax
 mov fs, ax
 mov gs, ax
-mov sp, 0x7c00
+mov sp, 0x7c00  ; Set stack pointer to the top of boot sector
 
-; 0xb800 is the start of the video memory
-; refer to https://en.wikipedia.org/wiki/Video_Graphics_Array#Memory_layout
-; mov ax, 0xb800
-; mov ds, ax
-; mov byte [0], 'A'
+; Display the boot message
 mov si, booting
 call print
 
-mov edi, 0x1000
-mov ecx, 1
-mov bl, 4
+; Read first sector from disk (assume it's a bootloader)
+mov edi, 0x1000     ; Destination buffer
+mov ecx, 1          ; Read 1 sector
+mov bl, 4           ; LBA read mode (4 sectors)
 call read_disk
 
-; check loader signature: rouge -> ascii -> 52 4f 55 47 45
-cmp byte [0x1000], 0x52
+; Check loader signature ("ROUGE") at 0x1000
+cmp byte [0x1000], 0x52  ; 'R'
 jne error
-cmp byte [0x1001], 0x4f
+cmp byte [0x1001], 0x4F  ; 'O'
 jne error
-cmp byte [0x1002], 0x55
+cmp byte [0x1002], 0x55  ; 'U'
 jne error
-cmp byte [0x1003], 0x47
+cmp byte [0x1003], 0x47  ; 'G'
 jne error
-cmp byte [0x1004], 0x45
+cmp byte [0x1004], 0x45  ; 'E'
 jne error
+
+; Jump to loader at 0x1005
 jmp 0x1005
 
-
-; mov edi, 0x1000
-; mov ecx, 2
-; mov bl, 1
-; call write_disk
-
-; block forever
+; Infinite loop in case of error
 jmp $
 
-; ------------------------------
+; Write disk function (writes one sector)
 write_disk:
-
-    ; 设置读写扇区的数量
+    ; Set the number of sectors to write
     mov dx, 0x1f2
     mov al, bl
     out dx, al
 
-    inc dx; 0x1f3
-    mov al, cl; 起始扇区的前八位
+    ; Set the starting sector (low byte)
+    inc dx
+    mov al, cl
     out dx, al
 
-    inc dx; 0x1f4
+    ; Set the starting sector (middle byte)
+    inc dx
     shr ecx, 8
-    mov al, cl; 起始扇区的中八位
+    mov al, cl
     out dx, al
 
-    inc dx; 0x1f5
+    ; Set the starting sector (high byte)
+    inc dx
     shr ecx, 8
-    mov al, cl; 起始扇区的高八位
+    mov al, cl
     out dx, al
 
-    inc dx; 0x1f6
+    ; Set the disk mode to LBA
+    inc dx
     shr ecx, 8
-    and cl, 0b1111; 将高四位置为 0
-
-    mov al, 0b1110_0000;
+    and cl, 0b1111          ; Clear high 4 bits
+    mov al, 0b1110_0000
     or al, cl
-    out dx, al; 主盘 - LBA 模式
+    out dx, al              ; Main disk - LBA mode
 
-    inc dx; 0x1f7
-    mov al, 0x30; 写硬盘
+    ; Disk write command
+    inc dx
+    mov al, 0x30            ; Write sectors
     out dx, al
 
-    xor ecx, ecx; 将 ecx 清空
-    mov cl, bl; 得到读写扇区的数量
+    ; Set ECX to the number of sectors to write
+    xor ecx, ecx
+    mov cl, bl
 
-    .write:
-        push cx; 保存 cx
-        call .writes; 写入一个扇区
-        call .waits; 等待数据准备完毕
-        pop cx; 恢复 cx
-        loop .write
+    ; Write loop
+.write:
+    push cx
+    call .writes            ; Write one sector
+    call .waits             ; Wait for data to be ready
+    pop cx
+    loop .write
 
     ret
 
-    .waits:
-        mov dx, 0x1f7
-        .check:
-            in al, dx
-            jmp $+2; nop 直接跳转到下一行
-            jmp $+2; 一点点延迟
-            jmp $+2
-            and al, 0b1000_0000
-            cmp al, 0b0000_0000
-            jnz .check
-        ret
+; Wait for the disk to be ready
+.waits:
+    mov dx, 0x1f7           ; Status register
+.check:
+    in al, dx
+    and al, 0b1000_0000     ; Check bit 7 (drive ready)
+    cmp al, 0b0000_0000     ; If not ready, continue checking
+    jnz .check
+    ret
 
-    .writes:
-        mov dx, 0x1f0
-        mov cx, 256; 一个扇区 256 字
-        .writew:
-            mov ax, [edi]
-            out dx, ax
-            jmp $+2; 一点点延迟
-            jmp $+2
-            jmp $+2
+; Write one sector
+.writes:
+    mov dx, 0x1f0           ; Data register
+    mov cx, 256             ; One sector = 256 words (512 bytes)
+.writew:
+    mov ax, [edi]
+    out dx, ax
+    add edi, 2              ; Move to next word
+    loop .writew
+    ret
 
-            add edi, 2
-            loop .writew
-        ret
-
-
-
+; Read disk function (reads one sector)
 read_disk:
-
-    ; 设置读写扇区的数量
+    ; Set the number of sectors to read
     mov dx, 0x1f2
     mov al, bl
     out dx, al
 
-    inc dx; 0x1f3
-    mov al, cl; 起始扇区的前八位
+    ; Set the starting sector (low byte)
+    inc dx
+    mov al, cl
     out dx, al
 
-    inc dx; 0x1f4
+    ; Set the starting sector (middle byte)
+    inc dx
     shr ecx, 8
-    mov al, cl; 起始扇区的中八位
+    mov al, cl
     out dx, al
 
-    inc dx; 0x1f5
+    ; Set the starting sector (high byte)
+    inc dx
     shr ecx, 8
-    mov al, cl; 起始扇区的高八位
+    mov al, cl
     out dx, al
 
-    inc dx; 0x1f6
+    ; Set the disk mode to LBA
+    inc dx
     shr ecx, 8
-    and cl, 0b1111; 将高四位置为 0
-
-    mov al, 0b1110_0000;
+    and cl, 0b1111          ; Clear high 4 bits
+    mov al, 0b1110_0000
     or al, cl
-    out dx, al; 主盘 - LBA 模式
+    out dx, al              ; Main disk - LBA mode
 
-    inc dx; 0x1f7
-    mov al, 0x20; 读硬盘
+    ; Disk read command
+    inc dx
+    mov al, 0x20            ; Read sectors
     out dx, al
 
-    xor ecx, ecx; 将 ecx 清空
-    mov cl, bl; 得到读写扇区的数量
+    ; Set ECX to the number of sectors to read
+    xor ecx, ecx
+    mov cl, bl
 
-    .read:
-        push cx; 保存 cx
-        call .waits; 等待数据准备完毕
-        call .reads; 读取一个扇区
-        pop cx; 恢复 cx
-        loop .read
+    ; Read loop
+.read:
+    push cx
+    call .waits             ; Wait for data to be ready
+    call .reads             ; Read one sector
+    pop cx
+    loop .read
 
     ret
 
-    .waits:
-        mov dx, 0x1f7
-        .check:
-            in al, dx
-            jmp $+2; nop 直接跳转到下一行
-            jmp $+2; 一点点延迟
-            jmp $+2
-            and al, 0b1000_1000
-            cmp al, 0b0000_1000
-            jnz .check
-        ret
+; Wait for the disk to be ready
+.waits:
+    mov dx, 0x1f7           ; Status register
+.check:
+    in al, dx
+    and al, 0b1000_1000     ; Check bit 7 (drive ready)
+    cmp al, 0b0000_1000     ; If data is ready (bit 3)
+    jnz .check
+    ret
 
-    .reads:
-        mov dx, 0x1f0
-        mov cx, 256; 一个扇区 256 字
-        .readw:
-            in ax, dx
-            jmp $+2; 一点点延迟
-            jmp $+2
-            jmp $+2
-            mov [edi], ax
-            add edi, 2
-            loop .readw
-        ret
+; Read one sector
+.reads:
+    mov dx, 0x1f0           ; Data register
+    mov cx, 256             ; One sector = 256 words (512 bytes)
+.readw:
+    in ax, dx
+    mov [edi], ax           ; Store word in memory
+    add edi, 2              ; Move to next word
+    loop .readw
+    ret
 
-
-
-
-
-
+; Print string using BIOS interrupt
 print:
-    mov ah, 0x0e
-    .loop:
-        mov al, [si]
-        cmp al, 0
-        je .done
-        int 0x10
-        inc si
-        jmp .loop
-    .done:
+    mov ah, 0x0e            ; Teletype output function (BIOS)
+.loop:
+    mov al, [si]
+    cmp al, 0               ; Check if it's the end of the string
+    je .done
+    int 0x10                ; Print character
+    inc si                   ; Move to next character
+    jmp .loop
+.done:
     ret
 
+; Error handling: print error message and halt
 error:
     mov si, error_msg
     call print
     hlt
     jmp $
 
+; Boot message (will be displayed during boot process)
 booting:
-    ; 10 is the line feed, 13 is the carriage return
     db "Booting RougeOS ......... XD", 10, 13, 0
-    
+
+; Error message (printed if loader signature check fails)
 error_msg:
     db "Error: Something went wrong!", 10, 13, 0
 
-; MBR: the last two bytes must be 0x55, 0xaa
-; refer to https://en.wikipedia.org/wiki/Master_boot_record
+; Master Boot Record (MBR): last two bytes must be 0x55, 0xaa
+; Refer to https://en.wikipedia.org/wiki/Master_boot_record
 times 510-($-$$) db 0
-db 0x55, 0xaa
+db 0x55, 0xaa  ; MBR signature
