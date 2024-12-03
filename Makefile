@@ -19,7 +19,8 @@ INCLUDE := -I$(SRC)/include
 # QEMU configuration variables
 QEMU := qemu-system-i386
 QEMU_MONITOR := -monitor stdio
-QEMU_DRIVE := -drive file=$(BUILD)/os.img,format=raw,index=0,media=disk
+QEMU_OPTIONS := -m 32M -boot order=c
+QEMU_DEBUG := -s -S
 
 # GDB configuration variables
 GDB := gdb
@@ -80,15 +81,17 @@ $(BUILD)/os.img: $(BUILD)/boot.bin \
 	dd if=$(BUILD)/system.bin of=$(BUILD)/os.img bs=512 count=200 seek=5 conv=notrunc
 
 # Run the OS on QEMU
-run: $(BUILD)/os.img
+qemu: $(BUILD)/os.img
 	@echo "Running the OS with QEMU"
-	$(QEMU) $(QEMU_MONITOR) $(QEMU_DRIVE)
+	$(QEMU) -drive file=$<,format=raw,index=0,media=disk \
+		$(QEMU_OPTIONS) $(QEMU_MONITOR)
 
 # Debug the OS using GDB with QEMU
-debug: $(BUILD)/os.img
+qemu-debug: $(BUILD)/os.img
 	@echo "Starting QEMU with GDB for debugging"
 	# Start QEMU with remote debugging enabled
-	$(QEMU) -s -S $(QEMU_DRIVE) &
+	$(QEMU) -drive file=$<,format=raw,index=0,media=disk \
+		$(QEMU_OPTIONS) $(QEMU_DEBUG) &
 	# Run GDB with the specified script
 	$(GDB) -x $(GDB_SCRIPT)
 
@@ -98,4 +101,4 @@ clean:
 	rm -rf $(BUILD)
 
 # .PHONY declaration for non-file targets
-.PHONY: clean run debug
+.PHONY: clean qemu qemu-debug
