@@ -78,16 +78,16 @@ protected_mode:
     mov gs, ax
     mov ss, ax
 
-    ; Set up a good place to load the kernel at 0x10000
-    mov esp, 0x10000                ; Set stack pointer
+    ; Set up a good place to load the kernel at 0x7E00
+    mov esp, 0x7E00                ; Set stack pointer
 
     ; Start loading the kernel into memory
-    mov edi, 0x10000                ; Set destination address for disk read
+    mov edi, 0x7E00                ; Set destination address for disk read
     mov ecx, 5                      ; Number of sectors to read
     mov bl, 200                     ; Number of sectors to read at once
 
     call read_disk                  ; Call disk reading function
-    jmp dword code_selector:0x10000  ; Jump to kernel's entry point
+    jmp dword code_selector:0x7E00  ; Jump to kernel's entry point
 
 jmp $
 
