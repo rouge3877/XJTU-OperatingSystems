@@ -38,7 +38,22 @@ detect_memory:
 
 ;     loop .show
 
-jmp $
+; in protected mode, bios interrupts are disabled
+prepare_protected_mode:
+    cli
+
+    in al, 0x92 ; open A20
+    or al, 2
+    out 0x92, al
+
+    lgdt [gdt_pointer]
+
+    mov eax, cr0
+    or eax, 1
+    mov cr0, eax
+
+    ; use jmp to flush the instruction cache
+    jmp dword code_selector:protected_mode
 
 
 print:
@@ -58,6 +73,55 @@ error:
     call print
     hlt
     jmp $
+
+
+[bits 32]
+protected_mode:
+    mov ax, data_selector
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+
+    mov esp, 0x90000 ;
+
+    mov byte [0xb8000], 'A'
+    mov byte [0x200000], 'B'
+
+
+jmp $
+
+
+code_selector equ (1<<3)
+data_selector equ (2<<3)
+
+memory_base equ 0 ; memory base address
+memory_limit equ ((1 << 32) / 4096 - 1) ; memory limit address
+
+gdt_pointer:
+    dw gdt_end - gdt_start - 1
+    dd gdt_start
+
+gdt_start:
+    dd 0, 0; null descriptor
+gdt_code:
+    dw memory_limit & 0xffff; limit 0:15
+    dw memory_base & 0xffff; base 0:15
+    db (memory_base >> 16) & 0xff; base 16:23
+
+    db 0b_1_00_1_1_0_1_0
+    db 0b1_1_0_0_0000 | ((memory_limit >> 16) & 0xf)
+    db (memory_base >> 24) & 0xff; base 24:31
+gdt_data:
+    dw memory_limit & 0xffff; limit 0:15
+    dw memory_base & 0xffff; base 0:15
+    db (memory_base >> 16) & 0xff; base 16:23
+
+    db 0b_1_00_1_0_0_1_0
+    db 0b1_1_0_0_0000 | ((memory_limit >> 16) & 0xf)
+    db (memory_base >> 24) & 0xff; base 24:31
+gdt_end:
 
 booting:
     ; 10 is the line feed, 13 is the carriage return
