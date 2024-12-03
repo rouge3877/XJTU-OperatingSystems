@@ -2,6 +2,20 @@
 BUILD := build
 SRC := src
 
+# gcc
+CC := gcc
+CFLAGS := -m32
+CFLAGE += -fno-buildin # disable gcc built-in functions
+CFLAGS += -nostdinc # disable standard header
+CFLAGS += -fno-pic # disable position independent code
+CFLAGS += -fno-pie # disable position independent executable
+CFLAGS += -nostdlib # disable standard library
+CFLAGS += -fno-stack-protector # disable stack protector
+CFLAGS := $(strip ${CFLAGS})
+
+DEBUG := -g
+INCLUDE := -I$(SRC)/include
+
 # QEMU configuration variables
 QEMU := qemu-system-i386
 QEMU_MONITOR := -monitor stdio
@@ -31,8 +45,13 @@ $(BUILD)/kernel/%.o: $(SRC)/kernel/%.asm
 	$(shell mkdir -p $(BUILD)/kernel)
 	nasm -f elf32 $< -o $@
 
+$(BUILD)/kernel/%.o: $(SRC)/kernel/%.c
+	$(shell mkdir -p $(BUILD)/kernel)
+	$(CC) $(CFLAGS) $(DEBUG) $(INCLUDE) -c $< -o $@
+
 # Link kernel
-$(BUILD)/kernel.bin: $(BUILD)/kernel/start.o
+$(BUILD)/kernel.bin: $(BUILD)/kernel/start.o \
+					 $(BUILD)/kernel/main.o
 	$(shell mkdir -p $(BUILD)/kernel)
 	ld -m elf_i386 -static $^ -o $@ -Ttext $(ENTRY_POINT)
 
