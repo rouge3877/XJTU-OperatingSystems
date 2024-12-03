@@ -1,7 +1,10 @@
 #ifndef _TYPE_H_
 #define _TYPE_H_
 
-#define NULL 0
+#define NULL ((void *)0)
+
+#define EOS '\0'
+
 #define EOF -1
 
 #define bool _Bool
@@ -20,5 +23,6 @@ typedef short int16_t;
 typedef int int32_t;
 typedef long long int64_t;
 
+typedef unsigned long size_t;
 
 #endif

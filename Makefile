@@ -42,18 +42,19 @@ $(BUILD)/%.bin: $(SRC)/%.asm
 	nasm -f bin $< -o $@
 
 # Compile kernel
-$(BUILD)/kernel/%.o: $(SRC)/kernel/%.asm
-	$(shell mkdir -p $(BUILD)/kernel)
+$(BUILD)/%.o: $(SRC)/%.asm
+	$(shell mkdir -p $(dir $@))
 	nasm -f elf32 $< -o $@
 
-$(BUILD)/kernel/%.o: $(SRC)/kernel/%.c
-	$(shell mkdir -p $(BUILD)/kernel)
+$(BUILD)/%.o: $(SRC)/%.c
+	$(shell mkdir -p $(dir $@))
 	$(CC) $(CFLAGS) $(DEBUG) $(INCLUDE) -c $< -o $@
 
 # Link kernel
 $(BUILD)/kernel.bin: $(BUILD)/kernel/start.o \
 					 $(BUILD)/kernel/main.o \
 					 $(BUILD)/kernel/io.o \
+					 $(BUILD)/library/string.o \
 	$(shell mkdir -p $(BUILD)/kernel)
 	ld -m elf_i386 -static $^ -o $@ -Ttext $(ENTRY_POINT)
 
