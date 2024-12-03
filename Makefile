@@ -52,7 +52,8 @@ $(BUILD)/kernel/%.o: $(SRC)/kernel/%.c
 
 # Link kernel
 $(BUILD)/kernel.bin: $(BUILD)/kernel/start.o \
-					 $(BUILD)/kernel/main.o
+					 $(BUILD)/kernel/main.o \
+					 $(BUILD)/kernel/io.o \
 	$(shell mkdir -p $(BUILD)/kernel)
 	ld -m elf_i386 -static $^ -o $@ -Ttext $(ENTRY_POINT)
 
