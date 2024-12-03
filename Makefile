@@ -1,29 +1,56 @@
-# Compile boot.asm
-build/boot.bin: src/boot.asm
-	mkdir -p build
-	nasm -f bin src/boot.asm -o build/boot.bin
+# Directories for source and build files
+BUILD := build
+SRC := src
 
-# Compile loader.asm
-build/loader.bin: src/loader.asm
-	mkdir -p build
-	nasm -f bin src/loader.asm -o build/loader.bin
+# QEMU configuration variables
+QEMU := qemu-system-i386
+QEMU_MONITOR := -monitor stdio
+QEMU_DRIVE := -drive file=$(BUILD)/os.img,format=raw,index=0,media=disk
 
-# Create hard disk image
-os.img: build/boot.bin build/loader.bin
-	yes | bximage -q -hd=16 -func=create -sectsize=512 -imgmode=flat -q build/os.img
-	dd if=build/boot.bin of=build/os.img bs=512 count=1 seek=0 conv=notrunc
-	dd if=build/loader.bin of=build/os.img bs=512 count=4 seek=2 conv=notrunc
+# GDB configuration variables
+GDB := gdb
+GDB_SCRIPT := script/init.gdb
+
+# bximage configuration variables
+BXIMAGE := bximage
+BXIMAGE_OPTIONS := -q -hd=16 -func=create -sectsize=512 -imgmode=flat
+
+# Ensure build directory exists
+$(shell mkdir -p $(BUILD))
+
+# Compile boot.asm and loader.asm into binary files
+$(BUILD)/%.bin: $(SRC)/%.asm
+	@echo "Assembling $< into $@"
+	nasm -f bin $< -o $@
+
+# Create a hard disk image
+$(BUILD)/os.img: $(BUILD)/boot.bin $(BUILD)/loader.bin
+	@echo "Creating hard disk image $(BUILD)/os.img"
+	# Create the empty disk image with bximage
+	yes | $(BXIMAGE) $(BXIMAGE_OPTIONS) $(BUILD)/os.img
+	
+	# Write boot.bin to the first 512-byte sector (boot sector)
+	dd if=$(BUILD)/boot.bin of=$(BUILD)/os.img bs=512 count=1 seek=0 conv=notrunc
+	# Write loader.bin to the second sector and the following 3 sectors (total of 4 sectors)
+	dd if=$(BUILD)/loader.bin of=$(BUILD)/os.img bs=512 count=4 seek=2 conv=notrunc
 
 # Run the OS on QEMU
-run: os.img
-	qemu-system-i386  -monitor stdio -drive file=build/os.img,format=raw,index=0,media=disk
+run: $(BUILD)/os.img
+	@echo "Running the OS with QEMU"
+	$(QEMU) $(QEMU_MONITOR) $(QEMU_DRIVE)
 
-debug: os.img
-	qemu-system-i386 -s -S ./build/os.img &
-	gdb -x script/init.gdb
+# Debug the OS using GDB with QEMU
+debug: $(BUILD)/os.img
+	@echo "Starting QEMU with GDB for debugging"
+	# Start QEMU with remote debugging enabled
+	$(QEMU) -s -S $(QEMU_DRIVE) &
+	# Run GDB with the specified script
+	$(GDB) -x $(GDB_SCRIPT)
 
-
-.PHONY: clean run debug
-
+# Clean the build directory
 clean:
-	rm -rf build/
+	@echo "Cleaning the build directory..."
+	rm -rf $(BUILD)
+
+# .PHONY declaration for non-file targets
+.PHONY: clean run debug
