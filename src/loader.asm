@@ -90,7 +90,7 @@ protected_mode:
     ; mov byte [0x200000], 'B'
 
     mov edi, 0x10000
-    mov ecx, 6
+    mov ecx, 5
     mov bl, 200
 
     call read_disk

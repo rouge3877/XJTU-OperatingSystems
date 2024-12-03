@@ -56,9 +56,9 @@ $(BUILD)/os.img: $(BUILD)/boot.bin \
 	# Write boot.bin to the first 512-byte sector (boot sector)
 	dd if=$(BUILD)/boot.bin of=$(BUILD)/os.img bs=512 count=1 seek=0 conv=notrunc
 	# Write loader.bin to the second sector and the following 3 sectors (total of 4 sectors)
-	dd if=$(BUILD)/loader.bin of=$(BUILD)/os.img bs=512 count=4 seek=2 conv=notrunc
+	dd if=$(BUILD)/loader.bin of=$(BUILD)/os.img bs=512 count=4 seek=1 conv=notrunc
 	# Write system.bin to the 6th sector and the following 20 sectors (total of 200 sectors)
-	dd if=$(BUILD)/system.bin of=$(BUILD)/os.img bs=512 count=200 seek=6 conv=notrunc
+	dd if=$(BUILD)/system.bin of=$(BUILD)/os.img bs=512 count=200 seek=5 conv=notrunc
 
 # Run the OS on QEMU
 run: $(BUILD)/os.img

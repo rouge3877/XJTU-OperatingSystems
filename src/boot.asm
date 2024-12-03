@@ -26,7 +26,7 @@ mov si, booting
 call print
 
 mov edi, 0x1000
-mov ecx, 2
+mov ecx, 1
 mov bl, 4
 call read_disk
 
