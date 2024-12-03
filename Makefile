@@ -1,10 +1,10 @@
 # Compile boot.asm
-boot.bin: src/boot.asm
+build/boot.bin: src/boot.asm
 	mkdir -p build
 	nasm -f bin src/boot.asm -o build/boot.bin
 
 # Compile loader.asm
-boot.bin: src/loader.asm
+build/loader.bin: src/loader.asm
 	mkdir -p build
 	nasm -f bin src/loader.asm -o build/loader.bin
 
