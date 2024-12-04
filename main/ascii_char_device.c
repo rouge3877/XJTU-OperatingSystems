@@ -69,7 +69,7 @@ static int ascii_open(struct inode *inode, struct file *file) {
     // 增加用户计数
     atomic_inc(&dev->user_count);
 
-    printk(KERN_INFO "ascii_char_device: Device opened by PID %d (Total users: %d)\n", current->pid, atomic_read(&dev->user_count));
+    printk(KERN_INFO "ascii_char_device: Device opened by PID %d (Total users: %d)\n", current->tgid, atomic_read(&dev->user_count));
     return 0;
 }
 
@@ -80,7 +80,7 @@ static int ascii_release(struct inode *inode, struct file *file) {
     // 减少用户计数
     atomic_dec(&dev->user_count);
 
-    printk(KERN_INFO "ascii_char_device: Device closed by PID %d (Total users: %d)\n", current->pid, atomic_read(&dev->user_count));
+    printk(KERN_INFO "ascii_char_device: Device closed by PID %d (Total users: %d)\n", current->tgid, atomic_read(&dev->user_count));
     return 0;
 }
 
@@ -110,7 +110,13 @@ static ssize_t ascii_read(struct file *file, char __user *buf, size_t count, lof
         msg = list_entry(pos, struct message, list);
 
         // 过滤私聊消息
-        if (msg->receiver_pid != 0 && msg->receiver_pid != current->pid && msg->sender_pid != current->pid) {
+        printk(KERN_DEBUG "[DEBUG]: ------------------------------------------\n");
+        printk(KERN_DEBUG "[DEBUG]: Read message:  msg->receiver_pid = %d\n", msg->receiver_pid);
+        printk(KERN_DEBUG "[DEBUG]: Read message:  current->tgid = %d\n", current->tgid);
+        printk(KERN_DEBUG "[DEBUG]: Read message:  msg->sender_pid = %d\n", msg->sender_pid);
+        printk(KERN_DEBUG "[DEBUG]: ------------------------------------------\n");
+
+        if (msg->receiver_pid != 0 && msg->receiver_pid != current->tgid && msg->sender_pid != current->tgid) {
             continue;
         }
 
@@ -121,14 +127,21 @@ static ssize_t ascii_read(struct file *file, char __user *buf, size_t count, lof
         *((pid_t *)kernel_buf) = msg->sender_pid;
         *((pid_t *)(kernel_buf + sizeof(pid_t))) = msg->receiver_pid;
         strncpy(kernel_buf + 2 * sizeof(pid_t), msg->content, MESSAGE_CONTENT_SIZE - 1);
+        
+        printk(KERN_DEBUG "[DEBUG]: Read message:  msg->content = %s\n", msg->content);
+
         kernel_buf[2 * sizeof(pid_t) + MESSAGE_CONTENT_SIZE - 1] = '\0';
 
         // 计算实际读取的字节数
         bytes_read = sizeof(pid_t) * 2 + strlen(kernel_buf + 2 * sizeof(pid_t));
-        if (total_bytes + bytes_read > count)
-            break; // 用户缓冲区空间不足
+        if (total_bytes + bytes_read > count){
+            printk(KERN_INFO "ascii_char_device: User buffer is full\n");
+            break;
+        }
 
         // 拷贝到用户空间
+        printk(KERN_DEBUG "[DEBUG]: Copying to user space:  kernel_buf = %s\n", kernel_buf+2*sizeof(pid_t));
+
         if (copy_to_user(buf + total_bytes, kernel_buf, bytes_read)) {
             up(&dev->sem);
             return -EFAULT;
@@ -145,13 +158,18 @@ static ssize_t ascii_read(struct file *file, char __user *buf, size_t count, lof
             kfree(msg);
             dev->msg_count--;
             printk(KERN_INFO "ascii_char_device: Message from PID %d deleted after being read by all users\n", msg->sender_pid);
+        }else if(msg->receiver_pid !=0 && msg->receiver_pid == current->tgid){
+            list_del(&msg->list);
+            kfree(msg);
+            dev->msg_count--;
+            printk(KERN_INFO "ascii_char_device: Private message from PID %d deleted after being read by receiver\n", msg->sender_pid);
         }
     }
 
     up(&dev->sem);
 
     if (total_bytes > 0) {
-        printk(KERN_INFO "ascii_char_device: Read %ld bytes by PID %d\n", total_bytes, current->pid);
+        printk(KERN_INFO "ascii_char_device: Read %ld bytes by PID %d\n", total_bytes, current->tgid);
         return total_bytes;
     }
 
@@ -173,9 +191,9 @@ static ssize_t ascii_write(struct file *file, const char __user *buf, size_t cou
     // 清零 kernel_buf 以防止残留数据
     memset(kernel_buf, 0, sizeof(kernel_buf));
 
-    if (copy_from_user(kernel_buf, buf, count)) {
+    if (copy_from_user(kernel_buf, buf, count))
         return -EFAULT;
-    }
+    
     kernel_buf[count] = '\0';
 
     // 检查是否为私聊消息
@@ -198,7 +216,7 @@ static ssize_t ascii_write(struct file *file, const char __user *buf, size_t cou
     if (!msg)
         return -ENOMEM;
 
-    msg->sender_pid = current->pid;
+    msg->sender_pid = current->tgid;
     msg->receiver_pid = target_pid;
     strncpy(msg->content, kernel_buf, MESSAGE_CONTENT_SIZE - 1);
     msg->content[MESSAGE_CONTENT_SIZE - 1] = '\0';

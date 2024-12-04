@@ -5,51 +5,56 @@
 #include <string.h>
 #include <pthread.h>
 
-#define DEVICE_PATH "/dev/ascii_char_device"
-#define BUFFER_SIZE 2048
+#define DEVICE_PATH "/dev/ascii_char_device"  // Device file path
+#define BUFFER_SIZE 2048  // Buffer size for reading data
 
-int fd;
+int fd;  // File descriptor for the device
 
-// 读取线程函数
+// Read thread function
 void *read_thread_func(void *arg) {
-    char buffer[BUFFER_SIZE];
     ssize_t ret;
     pid_t sender_pid, receiver_pid;
 
     while (1) {
-        ret = read(fd, buffer, sizeof(buffer));
+        char buffer[BUFFER_SIZE] = {0};
+        ret = read(fd, buffer, sizeof(buffer));  // Read data from the device
+
+        // Process the read data
         if (ret > 0) {
             size_t offset = 0;
             while (offset < ret) {
-                // 读取发送者PID
+                // Read the sender's PID
                 memcpy(&sender_pid, buffer + offset, sizeof(pid_t));
                 offset += sizeof(pid_t);
 
-                // 读取接收者PID
+                // Read the receiver's PID
                 memcpy(&receiver_pid, buffer + offset, sizeof(pid_t));
                 offset += sizeof(pid_t);
 
-                // 读取消息内容
+                // Read the message content
                 char *msg_content = buffer + offset;
                 size_t msg_len = strlen(msg_content);
-                offset += msg_len + 1; // 包含字符串结束符
+                offset += msg_len + 1;  // Include the null terminator
 
+                // Print debug information (if DEBUG is defined)
 #ifdef DEBUG
                 printf("[debug]: msg_len: %zu\n", msg_len);
                 printf("[debug]: msg_content: %s\n", msg_content);
                 printf("[debug]: receiver_pid: %d\n", receiver_pid);
                 printf("[debug]: sender_pid: %d\n", sender_pid);
 #endif
-                // 打印消息
+
+                // Print the message
                 if (receiver_pid == 0)
                     printf("[Broadcast] PID %d: %s\n", sender_pid, msg_content);
                 else
                     printf("[Private] PID %d to PID %d: %s\n", sender_pid, receiver_pid, msg_content);
             }
         } else if (ret == 0) {
-            // 没有新消息
-            usleep(100000); // 休眠100ms
+            // No new message, sleep for 100ms
+            usleep(100000);
         } else {
+            // Error reading from device, exit the thread
             perror("Failed to read from device");
             break;
         }
@@ -57,19 +62,25 @@ void *read_thread_func(void *arg) {
     return NULL;
 }
 
-// 发送消息函数
+// Function to send a message
 void send_message(const char *message) {
-    if (write(fd, message, strlen(message)) < 0) {
+    ssize_t written = write(fd, message, strlen(message));
+    if (written < 0) {
         perror("Failed to write to device");
     }
+
+    // Print debug information (if DEBUG is defined)
+#ifdef DEBUG
+    printf("[debug]: Sent message: %s\n", message);
+#endif
 }
 
-// 主函数
 int main() {
     pthread_t read_thread;
     char input[BUFFER_SIZE];
-    pid_t my_pid = getpid();
+    pid_t my_pid = getpid();  // Get the current process PID
 
+    // Open the device file for read and write access
     fd = open(DEVICE_PATH, O_RDWR);
     if (fd < 0) {
         perror("Failed to open device");
@@ -79,24 +90,23 @@ int main() {
     printf("Chat program started. Your PID: %d\n", my_pid);
     printf("Enter messages (for private message, use @<PID> <message>):\n");
 
-    // 创建读取线程
+    // Create the read thread
     if (pthread_create(&read_thread, NULL, read_thread_func, NULL) != 0) {
-        perror("Failed to c去掉换行符reate read thread");
+        perror("Failed to create read thread");
         close(fd);
         return EXIT_FAILURE;
     }
 
-    // 主线程用于发送消息
+    // Main thread is used for sending messages
     while (fgets(input, sizeof(input), stdin)) {
-        // 去掉换行符
+        // Remove the newline character from the input
         input[strcspn(input, "\n")] = '\0';
-        // printf("You: %s\n", input);
 
-        // 发送消息
+        // Send the message
         send_message(input);
     }
 
-    // 关闭设备
+    // Close the device file before exiting
     close(fd);
     return EXIT_SUCCESS;
 }

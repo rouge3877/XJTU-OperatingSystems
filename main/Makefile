@@ -14,6 +14,7 @@ install:
 	sudo chmod 666 /dev/ascii_char_device
 
 uninstall:
+	rm chat
 	sudo rmmod ascii_char_device
 	sudo rm /dev/ascii_char_device
 	sudo dmesg | tail
