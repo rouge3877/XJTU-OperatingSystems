@@ -33,3 +33,22 @@ modules:
 endif
 clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
+
+install:
+	@sudo insmod modify_syscall.ko
+	@echo "..."
+	@sudo dmesg | tail -n 10 | grep modify_syscall
+
+uninstall:
+	@sudo rmmod -f modify_syscall
+	@echo "..."
+	@sudo dmesg | tail -n 10 | grep modify_syscall
+
+.PHONY: show create install clean uninstall
+
+get_syscall_table:
+	sudo cat /proc/kallsyms | grep sys_call_table
+
+test:
+	gcc modify_new_syscall.c -o new_syscall
+	gcc modify_old_syscall.c -o old_syscall
