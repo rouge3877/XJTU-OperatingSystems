@@ -1,12 +1,27 @@
 #include <rouge.h>
+#include <io.h>
+#include <type.h>
 
-int magic = MAGICNUMBER;
-char message[] = "Hello, World!";
-char buffer[1024];
+
+#define CRT_ADDR_REG 0x3D4
+#define CRT_DATA_REG 0x3D5
+
+#define CRT_CURSOR_HIGH 0x0E
+#define CRT_CURSOR_LOW 0x0F
 
 void kernel_init() {
-    char *vedio_memory = (char *)0xb8000;
-    for(int i = 0; i < sizeof(message); i++) {
-        vedio_memory[i * 2] = message[i];
-    }
+
+
+    outb(CRT_ADDR_REG, CRT_CURSOR_HIGH);
+    uint16_t pos = inb(CRT_DATA_REG) << 8;
+    outb(CRT_ADDR_REG, CRT_CURSOR_LOW);
+    pos |= inb(CRT_DATA_REG);
+
+
+    outb(CRT_ADDR_REG, CRT_CURSOR_HIGH);
+    outb(CRT_DATA_REG, 0);
+    outb(CRT_ADDR_REG, CRT_CURSOR_LOW);
+    outb(CRT_DATA_REG, 0); 
+
+    return;
 }
