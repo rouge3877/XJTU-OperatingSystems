@@ -31,3 +31,5 @@ else
 modules:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules  #编译内核模块
 endif
+clean:
+	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
