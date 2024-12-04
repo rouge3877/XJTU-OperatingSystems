@@ -1,10 +1,22 @@
-ifneq ($(KERNELRELEASE),)
-	obj-m := globalvar.o  # obj-m 用于指定编译外部内核模块
-else
-	KERNELDIR := /lib/modules/$(shell uname -r)/build  # 获取内核源代码目录
-	PWD := $(shell pwd)  # 当前路径
+obj-m += globalvar.o
 
-all:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules  # 通过内核的构建系统编译模块
-endif
+create: globalvar.c driverTest.c
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+	gcc driverTest.c -o driverTest
 
+install: globalvar.ko
+	@sudo insmod globalvar.ko
+	@echo "..."
+	@sudo dmesg | tail -n 10 | grep globalvar
+	@sudo mknod -m 666 /dev/globalvar c 290 0
+	@sudo chmod 666 /dev/globalvar
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+	rm driverTest
+
+uninstall:
+	@sudo rmmod globalvar
+	@sudo rm /dev/globalvar
+	@echo "..."
+	@sudo dmesg | tail -n 10 | grep globalvar
