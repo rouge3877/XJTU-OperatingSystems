@@ -34,6 +34,12 @@ void *read_thread_func(void *arg) {
                 size_t msg_len = strlen(msg_content);
                 offset += msg_len + 1; // 包含字符串结束符
 
+#ifdef DEBUG
+                printf("[debug]: msg_len: %zu\n", msg_len);
+                printf("[debug]: msg_content: %s\n", msg_content);
+                printf("[debug]: receiver_pid: %d\n", receiver_pid);
+                printf("[debug]: sender_pid: %d\n", sender_pid);
+#endif
                 // 打印消息
                 if (receiver_pid == 0)
                     printf("[Broadcast] PID %d: %s\n", sender_pid, msg_content);
@@ -75,7 +81,7 @@ int main() {
 
     // 创建读取线程
     if (pthread_create(&read_thread, NULL, read_thread_func, NULL) != 0) {
-        perror("Failed to create read thread");
+        perror("Failed to c去掉换行符reate read thread");
         close(fd);
         return EXIT_FAILURE;
     }
@@ -84,6 +90,7 @@ int main() {
     while (fgets(input, sizeof(input), stdin)) {
         // 去掉换行符
         input[strcspn(input, "\n")] = '\0';
+        // printf("You: %s\n", input);
 
         // 发送消息
         send_message(input);
