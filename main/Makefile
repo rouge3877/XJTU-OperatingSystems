@@ -24,4 +24,5 @@ uninstall:
 .PHONY: show create install clean uninstall
 
 show: create install
-	source ./show.sh
+	chmod +x show.sh
+	./show.sh

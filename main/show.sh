@@ -11,10 +11,9 @@ fi
 tmux new-window -n "ChatWindow" \; \
   split-window -h \; \
   split-window -v \; \
-  select-pane -t 0 \; \
-  split-window -v
+  select-pane -t 0 
   
-for pane in 0 1 2 3; do
+for pane in 0 1 2; do
   tmux send-keys -t ChatWindow.$pane "./chat" C-m
 done
 
