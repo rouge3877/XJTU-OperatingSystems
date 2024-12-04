@@ -1,10 +1,23 @@
-ifneq ($(KERNELRELEASE),)
-	obj-m := modify_syscall.o  # obj-m 用于指定编译外部内核模块
-else
-	KERNELDIR := /lib/modules/$(shell uname -r)/build  # 获取内核源代码目录
-	PWD := $(shell pwd)  # 当前路径
+obj-m += modify_syscall.o
 
-all:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules  # 通过内核的构建系统编译模块
-endif
+create: modify_syscall.c modify_new_syscall.c modify_old_syscall.c
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+	gcc modify_new_syscall.c -o modify_new_syscall
+	gcc modify_old_syscall.c -o modify_old_syscall
 
+install: modify_syscall.ko
+	@sudo insmod modify_syscall.ko
+	@echo "..."
+	@sudo dmesg | tail -n 10 | grep modify_syscall
+
+clean: 
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+	rm modify_new_syscall
+	rm modify_old_syscall
+
+uninstall:
+	@sudo rmmod -f modify_syscall
+	@echo "..."
+	@sudo dmesg | tail -n 10 | grep modify_syscall
+
+.PHONY: show create install clean uninstall
