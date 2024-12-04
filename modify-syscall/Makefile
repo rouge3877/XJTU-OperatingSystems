@@ -33,9 +33,10 @@ modules:
 endif
 clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
+	rm new_syscall old_syscall
 
 install:
-	@sudo insmod modify_syscall.ko
+	@sudo insmod -f modify_syscall.ko
 	@echo "..."
 	@sudo dmesg | tail -n 10 | grep modify_syscall
 

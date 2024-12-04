@@ -1,104 +1,76 @@
+#include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/init.h>
-#include <linux/syscalls.h>
-#include <linux/fs.h>
-#include <linux/fs_struct.h>
-#include <linux/dcache.h>
-#include <linux/path.h>
-#include <linux/slab.h>
+#include <linux/kallsyms.h>
+#include <linux/uaccess.h>
 
-MODULE_LICENSE("GPL");
+#define sys_No 96
 
-// 用 sudo cat /proc/kallsyms | grep sys_call_table 获取 sys_call_table 的内核地址
-// 注意：每次重启内核必须再次获取地址
-#define SYS_CALL_TABLE_ADDRESS 0xffffffff82200320
-// 指向系统调用数组
-unsigned long *sys_call_table = (unsigned long *)SYS_CALL_TABLE_ADDRESS;
+unsigned long * p_sys_call_table;
+unsigned long old_sys_call_func;
 
-// 保存原始的系统调用
-int (*original_gettimeofday)(struct timeval *tv, struct timezone *tz);
-
-// 用于操作CR0寄存器的函数
-unsigned int ClearAndReturnCr0(void);
-void SetbackCr0(unsigned int val);
-
-// 新的系统调用函数
-// syscall 78 :gettimeofday
-// format: int gettimeofday(struct timeval *tv, struct timezone *tz);
-// tv for time, tz for timezone
-// tv is a struct timeval {time_t tv_sec; suseconds_t tv_usec;}
-// tz is a struct timezone {int tz_minuteswest; int tz_dsttime;}
-// sizeof(struct timeval) = 16, sizeof(struct timezone) = 8
-// in new syscall, we set time as ZERO
-asmlinkage int MyGettimeofday(struct timeval *tv, struct timezone *tz) {
-    printk(KERN_INFO "No 78 syscall has changed to hello\n");
-
-    printk(KERN_INFO "tv: %p\n", tv);
-    printk(KERN_INFO "tz: %p\n", tz);
-
-    printk(KERN_INFO "tv->tv_sec: %ld\n", tv->tv_sec);
-    printk(KERN_INFO "tv->tv_usec: %ld\n", tv->tv_usec);
-    printk(KERN_INFO "tz->tz_minuteswest: %d\n", tz->tz_minuteswest);
-    printk(KERN_INFO "tz->tz_dsttime: %d\n", tz->tz_dsttime);
-
-    tv->tv_sec = 0;
-    tv->tv_usec = 0;
-    return tv->tv_sec + tv->tv_usec;
+asmlinkage long hello(const struct pt_regs *regs)
+{
+    printk(KERN_INFO "No 96 syscall has changed to hello");
+    return regs->di + regs->si;
 }
 
-// 写保护禁用与恢复：为了修改只读的系统调用表，需要暂时禁用内存写保护。
-// 这通过修改CR0控制寄存器实现，CR0的某一位控制着CPU是否允许对只读页面的写操作。
-// 关闭CR0寄存器的写保护位
-unsigned int ClearAndReturnCr0(void) {
-    unsigned int cr0 = 0;
-    unsigned int ret;
-
-    asm volatile ("movq %%cr0, %%rax" : "=a"(cr0));
-    ret = cr0;
-
-    // 清除写保护位
-    cr0 &= 0xfffeffff;
-    asm volatile ("movq %%rax, %%cr0" :: "a"(cr0));
-
-    return ret;
+void disable_write_protection(void)
+{
+    unsigned long cr0;
+    asm volatile ("mov %%cr0, %0" : "=r"(cr0));
+    cr0 &= ~0x00010000;
+    asm volatile ("mov %0, %%cr0" : : "r"(cr0));
 }
 
-// 恢复CR0寄存器的原始值
-void SetbackCr0(unsigned int val) {
-    asm volatile ("movq %%rax, %%cr0" : : "a"(val));
+void enable_write_protection(void)
+{
+    unsigned long cr0;
+    asm volatile ("mov %%cr0, %0" : "=r"(cr0));
+    cr0 |= 0x00010000;
+    asm volatile ("mov %0, %%cr0" : : "r"(cr0));
 }
 
-// 模块加载时的初始化函数
-static int __init ModuleInit(void) {
-    printk(KERN_INFO "Module is being loaded.\n");
+void modify_syscall(void)
+{
+    printk(KERN_INFO "Modifying syscall table\n");
+    printk(KERN_INFO "sys_call_table address: %px\n", p_sys_call_table);
+    printk(KERN_INFO "sys_call_table[96] address: %px\n", &(p_sys_call_table[8 * sys_No]));
 
-    // 清除CR0寄存器的写保护位
-    unsigned int orig_cr0 = ClearAndReturnCr0();
+    old_sys_call_func = p_sys_call_table[8 * sys_No];
+    p_sys_call_table[8 * sys_No] = (unsigned long)hello;
+}
 
-    // 替换getdents系统调用
-    original_gettimeofday = (int (*)(struct timeval *tv, struct timezone *tz))sys_call_table[__NR_gettimeofday];
-    sys_call_table[__NR_gettimeofday] = (unsigned long)MyGettimeofday;
+void restore_syscall(void)
+{
+    p_sys_call_table[8 * sys_No] = old_sys_call_func;
+}
 
-    // 恢复CR0的原始值
-    SetbackCr0(orig_cr0);
+static int __init mymodule_init(void)
+{
+    p_sys_call_table = (unsigned long *)0xffffffffa5600320;
+    if (!p_sys_call_table) {
+        printk(KERN_ERR "Failed to find sys_call_table\n");
+        return -1;
+    }
 
+    disable_write_protection();
+    modify_syscall();
+    enable_write_protection();
+
+    printk(KERN_INFO "Module loaded successfully.\n");
     return 0;
 }
 
-// 模块卸载时的清理函数
-static void __exit ModuleExit(void) {
-    printk(KERN_INFO "Module is being unloaded.\n");
+static void __exit mymodule_exit(void)
+{
+    disable_write_protection();
+    restore_syscall();
+    enable_write_protection();
 
-    // 清除CR0寄存器的写保护位
-    unsigned int orig_cr0 = ClearAndReturnCr0();
-
-    // 恢复原始的getdents系统调用
-    sys_call_table[__NR_gettimeofday] = (unsigned long)original_gettimeofday;
-
-    // 恢复CR0的原始值
-    SetbackCr0(orig_cr0);
+    printk(KERN_INFO "Module unloaded successfully.\n");
 }
 
-module_init(ModuleInit);
-module_exit(ModuleExit);
+module_init(mymodule_init);
+module_exit(mymodule_exit);
+MODULE_LICENSE("GPL");
